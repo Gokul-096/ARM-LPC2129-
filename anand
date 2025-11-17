@@ -1,0 +1,114 @@
+#include<lpc21xx.h>
+#include<string.h>
+#include"delay.h"
+#define motor 1<<12
+#define ir_sensor 1<<10
+void uart_config(void);
+void uart_tx(unsigned char c);
+void sent_string(unsigned char *);
+void GSM_sensor(int i);
+void uart_interrupt_config(void);
+void uart_isr(void) __irq;
+int count=0;
+void uart_config(void)
+{
+//Config for UART0
+PINSEL0|=0x05;
+U0LCR=0x83;
+U0DLL=97;
+U0DLM=0;
+U0LCR=0x03;
+//Config for UART1
+PINSEL0|=(1<<16)|(1<<18);
+U1LCR=0x83;
+U1DLL=97;
+U1DLM=0;
+U1LCR=0x03;
+}
+void GSM_sensor(int i)
+{
+ sent_string("AT\r\n");
+ delay_ms(500);
+ sent_string("AT+CMGF=1\r\n");
+ delay_ms(500);
+ sent_string("AT+CMGS=\"+918754313402\"\r\n");
+ delay_ms(500);
+ if(i==1)
+ {
+ sent_string("Vechical were access by invaild card\r\n");
+ delay_ms(500);
+ }
+ else if(i==2)
+ {
+ sent_string("Some one are near by car\r\n");
+ delay_ms(500);
+ }
+ uart_tx(0x1A);
+ delay_ms(500);
+ 
+}
+void uart_tx(unsigned char c)
+{
+ while(((U1LSR>>5)&1)==0);
+ U1THR=c;
+}
+void sent_string(unsigned char *s)
+{
+while(*s)
+{
+uart_tx(*s++);
+}
+}
+void uart_interrupt_config()
+{
+VICIntSelect=0;
+VICVectCntl0 = 0x20 | 6; 
+VICVectAddr0=(unsigned long)uart_isr;
+U0IER=1<<0;
+VICIntEnable=1<<6;
+}
+void uart_isr(void) __irq
+{
+
+ char a[13];
+ int i;
+ for(i=0;i<=11;i++)
+ {
+ while((U0LSR&0x1)==0);
+ a[i]=U0RBR;
+ }
+ a[12]='\0';
+ if(strcmp(a,"060066FDC855")==0)
+ {
+ if(count++==0)
+ {
+ IOSET0=motor;
+ }
+ else
+ {
+ IOCLR0=motor;
+ count=0;
+ }
+ }
+ else
+ {
+ GSM_sensor(1);
+ }
+ VICVectAddr=0;
+ 
+}
+int main()
+{
+ IODIR0|=motor;
+ uart_config();
+ uart_interrupt_config();
+ //sent_string("test");
+ //GSM_sensor(1);
+ while(1)
+ {
+ if((IOPIN0&ir_sensor)==0)
+ {
+ GSM_sensor(2);
+ }
+ }
+}
